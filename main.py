@@ -5,7 +5,7 @@ import telebot
 from telebot import types
 import time
 
-TOKEN = '7970316922:AAGPCNvBVh_8BSq9ducZgrDzPUOW13FeSdg'
+TOKEN = '7998166097:AAGDDQGfFRC50GQ2ORPsbnZ0u3qp8p7tgMY'
 bot = telebot.TeleBot(TOKEN)
 
 URLS = [
