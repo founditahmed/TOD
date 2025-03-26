@@ -1,2 +1,2 @@
 aiohttp
-telebot
+fake_useragent
